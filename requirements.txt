@@ -1,0 +1,5 @@
+python-telegram-bot==21.4
+easyocr==1.7.1
+deep-translator==1.11.4
+Pillow==10.4.0
+numpy==1.26.4

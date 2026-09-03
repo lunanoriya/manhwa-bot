@@ -20,7 +20,7 @@ BotFather'dan token olish:
 """
 
 import io
-import logging
+import os
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -32,7 +32,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filte
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "BU_YERGA_TOKENINGIZNI_QOʻYING"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # OCR reader'ni bir marta yuklaymiz (inglizcha matn uchun)
 reader = easyocr.Reader(["en"])

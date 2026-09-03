@@ -20,6 +20,7 @@ BotFather'dan token olish:
 """
 
 import io
+import logging
 import os
 
 import numpy as np

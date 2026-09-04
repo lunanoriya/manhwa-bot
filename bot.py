@@ -1,8 +1,10 @@
 """
 Manhwa Tarjimon Bot
 --------------------
-Foydalanuvchi Telegramga manhwa varog'i (rasm) yuboradi.
-Bot rasmdagi inglizcha matnni o'zbek tiliga tarjima qilib qaytaradi.
+Foydalanuvchi Telegramga manhwa varog'i (rasm) yuboradi — RASM SIFATIDA HAM,
+FAYL (DOCUMENT) SIFATIDA HAM qabul qilinadi.
+Bot rasmdagi inglizcha matnni o'zbek tiliga tarjima qilib, FAYL sifatida
+(sifat yo'qotilmasdan) qaytaradi.
 
 BOT_TOKEN Railway'da "Variables" bo'limida o'rnatiladi (kodga yozilmaydi).
 """
@@ -15,13 +17,12 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import easyocr
 from deep_translator import GoogleTranslator
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Tokenni muhit o'zgaruvchisidan olamiz, bo'shliqlarni tozalaymiz
 BOT_TOKEN = (os.environ.get("BOT_TOKEN") or "").strip()
 
 if not BOT_TOKEN:
@@ -32,12 +33,10 @@ if not BOT_TOKEN:
 
 logger.info(f"Token yuklandi, uzunligi: {len(BOT_TOKEN)} belgi")
 
-# OCR reader'ni bir marta yuklaymiz (inglizcha matn uchun)
 reader = easyocr.Reader(["en"], gpu=False)
 
 
 def translate_text(text: str) -> str:
-    """Inglizcha matnni o'zbek tiliga tarjima qiladi."""
     try:
         return GoogleTranslator(source="en", target="uz").translate(text)
     except Exception as e:
@@ -46,7 +45,6 @@ def translate_text(text: str) -> str:
 
 
 def process_image(image: Image.Image) -> Image.Image:
-    """Rasmdagi inglizcha matnni topib, o'zbekcha tarjima bilan almashtiradi."""
     img_np = np.array(image.convert("RGB"))
     results = reader.readtext(img_np)
 
@@ -79,17 +77,13 @@ def process_image(image: Image.Image) -> Image.Image:
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Assalomu alaykum! Menga manhwa varog'ining rasmini yuboring, "
-        "men uni o'zbekchaga tarjima qilib beraman 📖"
+        "Assalomu alaykum! Menga manhwa varog'ining rasmini yuboring "
+        "(fayl yoki rasm sifatida), men uni o'zbekchaga tarjima qilib beraman 📖"
     )
 
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _process_and_reply(update: Update, image: Image.Image):
     await update.message.reply_text("Rasm qabul qilindi, ishlanyapti... ⏳")
-
-    photo_file = await update.message.photo[-1].get_file()
-    photo_bytes = await photo_file.download_as_bytearray()
-    image = Image.open(io.BytesIO(bytes(photo_bytes)))
 
     try:
         result_image = process_image(image)
@@ -99,16 +93,41 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     output = io.BytesIO()
-    output.name = "tarjima.png"
     result_image.save(output, format="PNG")
     output.seek(0)
 
-    await update.message.reply_photo(photo=output, caption="Tayyor ✅")
+    # Fayl sifatida yuboramiz - sifat yo'qolmasligi uchun
+    await update.message.reply_document(
+        document=InputFile(output, filename="tarjima.png"),
+        caption="Tayyor ✅",
+    )
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    photo_file = await update.message.photo[-1].get_file()
+    photo_bytes = await photo_file.download_as_bytearray()
+    image = Image.open(io.BytesIO(bytes(photo_bytes)))
+    await _process_and_reply(update, image)
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    doc = update.message.document
+    if not doc.mime_type or not doc.mime_type.startswith("image/"):
+        await update.message.reply_text(
+            "Bu fayl rasm emas ko'rinadi. Iltimos, rasm faylini yuboring."
+        )
+        return
+
+    doc_file = await doc.get_file()
+    doc_bytes = await doc_file.download_as_bytearray()
+    image = Image.open(io.BytesIO(bytes(doc_bytes)))
+    await _process_and_reply(update, image)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Menga manhwa varog'ining rasmini yuboring, men uni o'zbekchaga tarjima qilib beraman 📖"
+        "Menga manhwa varog'ining rasmini yuboring (fayl yoki rasm sifatida), "
+        "men uni o'zbekchaga tarjima qilib beraman 📖"
     )
 
 
@@ -116,6 +135,7 @@ def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.COMMAND, handle_start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.IMAGE, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     logger.info("Bot ishga tushdi...")
     app.run_polling()
